@@ -1408,3 +1408,157 @@ END SUBROUTINE eigen_cons
 !###########################################################
 !###########################################################
 !###########################################################
+SUBROUTINE mhd_allregime_5w(q_L,q_R,side,st_powell,fgdnv)
+   use amr_parameters
+   use hydro_parameters
+   use const
+   implicit none
+ 
+   ! arguments
+   real(dp),dimension(1:nvar)::q_L,q_R
+   real(dp),dimension(1:nvar+1)::fgdnv
+   integer::side
+   logical::st_powell
+
+   ! local variables
+   real(dp),dimension(1:nvar)::q
+   real(dp)::rho_L,p_L,rho_R,p_R
+   real(dp)::emag,B_norm2,B_trans2,BnormBtrans,cs,c_aL,c_bL,c_aR,c_bR
+   real(dp)::c_left,c_right,c,B_next
+   real(dp),dimension(3)::pL,pR,ustar,pstar,cL,cR,clpcrm1
+   integer::IX=1,IY=2,IZ=3
+   integer::idim,ivar
+   real(dp)::r,P,u,A,v,B,w,ekin,etot,eint
+
+   integer::idir!,idir_tag
+   idir=1        !! corresponds to the normal component of velocity and magnetic field
+ !  idir_tag=idir
+
+   rho_L       = q_L(1)
+   p_L         = q_L(2)
+   emag        = half*(q_L(4)*q_L(4)+q_L(6)*q_L(6)+q_L(8)*q_L(8))
+   B_norm2     = q_L(4)*q_L(4) !*3
+   B_trans2    = 2*emag-B_norm2 !*2
+!   BnormBtrans = sqrt(B_norm2*B_trans2)
+   BnormBtrans = 0.5*(B_norm2+B_trans2)
+   cs          = sqrt(abs(gamma*p_L/rho_L))
+   c_aL        = sqrt(rho_L*(B_norm2 + BnormBtrans))+1e-14
+   c_bL        = sqrt(rho_L*(rho_L*cs*cs + B_trans2 + BnormBtrans))
+   do idim=1,3 
+      pL(idim) = -q_L(4)*q_L(2*(idim+1))
+   enddo
+   pL(1) = pL(1) + p_L + emag
+
+   rho_R       = q_R(1)
+   p_R         = q_R(2)
+   emag        = half*(q_R(4)*q_R(4)+q_R(6)*q_R(6)+q_R(8)*q_R(8))
+   B_norm2     = q_R(4)*q_R(4)
+   B_trans2    = 2*emag-B_norm2
+!   BnormBtrans = sqrt(B_norm2*B_trans2)
+   BnormBtrans = 0.5*(B_norm2+B_trans2)
+   cs          = sqrt(abs(gamma*p_R/rho_R))
+   c_aR        = sqrt(rho_R*(B_norm2 + BnormBtrans))+1e-14
+   c_bR        = sqrt(rho_R*(rho_R*cs*cs + B_trans2 + BnormBtrans))
+   do idim=1,3
+      pR(idim) = -q_R(4)*q_R(2*(idim+1))
+   enddo
+   pR(1) = pR(1) + p_R + emag
+
+   if((q_L(4)*q_R(4)<-1e-16) .or. (q_L(6)*q_R(6)<-1e-16) .or. (q_L(8)*q_R(8)<-1e-16)) then
+#if HALL==1
+      CALL find_speed_fast(q_L,c_left,0d0)
+      CALL find_speed_fast(q_R,c_right,0d0)
+#else
+      CALL find_speed_fast(q_L,c_left)
+      CALL find_speed_fast(q_R,c_right)
+#endif
+      c_left =c_left *rho_L
+      c_right=c_right*rho_R
+      if (c_left<=c_right) then
+         c=c_right
+      else
+         c=c_left
+      endif
+      c_aL=c
+      c_aR=c
+      c_bR=c
+      c_bL=c
+   endif
+
+   cL(IX)   = c_aL; cR(IX)   = c_aR
+   cL(IY)   = c_aL; cR(IY)   = c_aR
+   cL(IZ)   = c_aL; cR(IZ)   = c_aR
+   cL(idir) = c_bL; cR(idir) = c_bR 
+
+   clpcrm1(IX) = 1.0/(cL(IX)+cR(IX))
+   clpcrm1(IY) = 1.0/(cL(IY)+cR(IY))
+   clpcrm1(IZ) = 1.0/(cL(IZ)+cR(IZ))
+
+   ustar(IX) = clpcrm1(IX)*(cL(IX)*q_L(2*IX+1) + cR(IX)*q_R(2*IX+1) + pL(IX) - pR(IX) )
+   ustar(IY) = clpcrm1(IY)*(cL(IY)*q_L(2*IY+1) + cR(IY)*q_R(2*IY+1) + pL(IY) - pR(IY) )
+   ustar(IZ) = clpcrm1(IZ)*(cL(IZ)*q_L(2*IZ+1) + cR(IZ)*q_R(2*IZ+1) + pL(IZ) - pR(IZ) )
+
+   pstar(IX) = clpcrm1(IX)*(cR(IX)*pL(IX) + cL(IX)*pR(IX) +cL(IX)*cR(IX)*(q_L(2*IX+1) - q_R(2*IX+1)) )
+   pstar(IY) = clpcrm1(IY)*(cR(IY)*pL(IY) + cL(IY)*pR(IY) +cL(IY)*cR(IY)*(q_L(2*IY+1) - q_R(2*IY+1)) ) 
+   pstar(IZ) = clpcrm1(IZ)*(cR(IZ)*pL(IZ) + cL(IZ)*pR(IZ) +cL(IZ)*cR(IZ)*(q_L(2*IZ+1) - q_R(2*IZ+1)) ) 
+
+   if ( ustar(idir) > zero ) then
+      q = q_L
+      B_next = q_R(4)
+   else
+      q = q_R
+      B_next = q_L(4)
+   endif
+
+   ! Powell source term
+   if (st_powell) then
+      if (side==-1) then
+        B_next = q_R(4)
+      else
+        B_next = q_L(4)
+      endif
+   endif
+
+   r=q(1); P=q(2); u=q(3); A=q(4)
+   v=q(5); B=q(6); w=q(7); C=q(8)
+   eint = P/(gamma-one)
+   ekin = half*(u*u+v*v+w*w)*r
+   emag = half*(A*A+B*B+C*C)
+   etot = eint+ekin+emag
+#if NENER>0
+   do irad = 1,nent
+     etot = etot + q(8+irad)/(gamma_rad(irad)-one)
+   end do
+   do irad = 1,ngrp
+     etot = etot + q(firstindex_er+irad)
+   end do
+#endif
+
+   ! Compute the Godunov flux 
+   fgdnv    = zero
+   fgdnv(1) = ustar(idir)*q(1)
+   fgdnv(2) = ustar(idir)*etot + pstar(1)*ustar(1)+pstar(2)*ustar(2)+pstar(3)*ustar(3) !XXX
+   fgdnv(3) = ustar(idir)*q(1)*q(3) + pstar(1)
+   fgdnv(5) = ustar(idir)*q(1)*q(5) + pstar(2)
+   fgdnv(7) = ustar(idir)*q(1)*q(7) + pstar(3)
+   fgdnv(4) = ustar(idir)*q(4) - B_next*ustar(1);
+   fgdnv(6) = ustar(idir)*q(6) - B_next*ustar(2);
+   fgdnv(8) = ustar(idir)*q(8) - B_next*ustar(3);
+
+   fgdnv(nvar)=ustar(idir)*eint
+
+   ! Passive scalars
+#if NPSCAL>0
+   do ivar = 1,npscal
+      fgdnv(firstindex_pscal+ivar) = ustar(idir)*q(1)*q(firstindex_pscal+ivar)
+   end do
+#endif
+ 
+   ! Internal energy
+   fgdnv(nvar+1)=ustar(idir)*eint
+
+ end subroutine mhd_allregime_5w
+!###########################################################
+!###########################################################
+!###########################################################
+!###########################################################

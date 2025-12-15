@@ -136,7 +136,7 @@ module hydro_parameters
   real(dp)::smallc=1.0d-10
   real(dp)::smallr=1.0d-10
   character(LEN=10)::scheme='muscl'
-  character(LEN=10)::riemann='llf'
+  character(LEN=15)::riemann='llf'
 #ifdef SOLVERmhd
   integer ::slope_mag_type=-1
   real(dp)::eta_mag=0

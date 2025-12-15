@@ -188,6 +188,8 @@ subroutine read_hydro_params(nml_ok)
     iriemann = 4
   CASE ('hydro')
     iriemann = 5
+  CASE ('mhd_allregime')
+    iriemann = 6
 
   CASE DEFAULT
     write(*,*)'unknown riemann solver'

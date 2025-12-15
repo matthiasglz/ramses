@@ -1365,6 +1365,8 @@ subroutine cmpflxm(qm,im1,im2,jm1,jm2,km1,km2, &
                  CALL lax_friedrich    (qleft,qright,fgdnv,zero_flux)
               CASE (5)
                  CALL hydro_acoustic   (qleft,qright,fgdnv)
+              CASE (6)
+                 CALL mhd_allregime_5w(qleft,qright,1,.false.,fgdnv)
               CASE DEFAULT
                  write(*,*)'unknown riemann solver'
                  call clean_stop
